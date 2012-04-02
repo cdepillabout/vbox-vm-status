@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+# List status of vms
+
+import os
+import re
+import sys
+
+from subprocess import Popen, PIPE
+
+ESCAPE="\033"
+
+# colored text
+BLACK_TEXT= ESCAPE + '[30m'
+RED_TEXT= ESCAPE + '[31m'
+GREEN_TEXT= ESCAPE + '[32m'
+YELLOW_TEXT= ESCAPE + '[33m'
+BLUE_TEXT= ESCAPE + '[34m'
+MAGENTA_TEXT= ESCAPE + '[35m'
+CYAN_TEXT= ESCAPE + '[36m'
+WHITE_TEXT= ESCAPE + '[37m'
+
+# bold color output 
+BOLD_TEXT= ESCAPE + '[01m'
+
+BOLD_BLACK_TEXT= BOLD_TEXT + BLACK_TEXT
+BOLD_RED_TEXT= BOLD_TEXT + RED_TEXT
+BOLD_GREEN_TEXT= BOLD_TEXT + GREEN_TEXT
+BOLD_YELLOW_TEXT= BOLD_TEXT + YELLOW_TEXT
+BOLD_BLUE_TEXT= BOLD_TEXT + BLUE_TEXT
+BOLD_MAGENTA_TEXT= BOLD_TEXT + MAGENTA_TEXT
+BOLD_CYAN_TEXT= BOLD_TEXT + CYAN_TEXT
+BOLD_WHITE_TEXT= BOLD_TEXT + WHITE_TEXT
+
+# normal text
+RESET_TEXT= ESCAPE + '[00m'
+
+def runcommand(args):
+    """
+    Run a command and check stderr.  
+    If anything is found on stderr, exit.
+    Return stdout.
+    """
+    stdout, stderr = Popen(args, stdout=PIPE, stderr=PIPE).communicate()
+    stdout = stdout.decode('utf-8')
+    stderr = stderr.decode('utf-8')
+
+    if stderr:
+        print("ERROR! Could not run command %s:\n%s" % (args, stderr))
+        sys.exit(1)
+
+    warning = checkWarning(stdout)
+    if warning:
+        print(warning)
+        sys.exit(1)
+
+    return stdout
+
+def checkWarning(stdout):
+    """
+    Checks the output of VBoxManage and makes sure there is no warning.
+    Returns the warning string if there is a warning or None if no warning.
+    """
+    # is there a warning?
+    m = re.match("^(WARNING: )", stdout)
+    if not m:
+        return None
+
+    # return the warning text
+    m = re.match("^(WARNING: )(.*?)(\nUUID:.*)?$", stdout, re.S)
+    assert(len(m.groups()) >= 2)
+    return m.group(1) + m.group(2)
+
+def print_status(name, uuid, longest_name_len):
+    cmd = ["VBoxManage", "showvminfo", uuid]
+    output = runcommand(cmd)
+
+    # find state line
+    stateline = ''
+    for line in output.strip().split('\n'):
+        if line.startswith("State:"):
+            stateline = line
+    if stateline == '':
+        print("ERROR! Couldn't find \"State:\" line when running cmd `%s`" % cmd)
+        sys.exit(1)
+
+    # get the state and the date since, and do a little formatting
+    stateline = stateline.strip()
+    a, state_since = stateline.split(None, 1)
+    state, since = state_since.rsplit('(', 1)
+    state = state.strip()
+    since = since[:-1]
+
+    if state == 'running':
+        state = BOLD_GREEN_TEXT + state + "    " + RESET_TEXT
+    elif state == 'saved':
+        state = BOLD_BLUE_TEXT + state + "      " + RESET_TEXT
+
+    status_string = "%%-%ds  %%s" % longest_name_len
+    print(status_string % (name, state))
+    #print("a = %-20s, state = %11s, since = %s" % (a, state, since))
+
+
+
+#runcommand(["VBoxManage", "createvm", "--name", name, "--register", "--ostype", ostype])
+
+def main():
+    #parser = argparse.ArgumentParser(description="Clone the current state of a VirtualBox VM.")
+
+    #parser.add_argument('VM', type=checkvmtype, nargs="?", help="VirtualBox VM name")
+    #parser.add_argument('NEW_VM_NAME', type=str, nargs="?", help="VirtualBox VM name")
+
+    #parser.add_argument('--list-vms', action='store_true', help="list available vms")
+    #parser.add_argument('--list-hdds', action='store_true', help="list available vms")
+
+    #args = parser.parse_args()
+
+    """
+    if args.list_vms:
+        printVMs(vms)
+        sys.exit(0)
+
+    if args.list_hdds:
+        for hdd in hddforest.getends():
+            print("%s  (%s)" % (hdd.uuid, hdd.hdvm or ''))
+            #print("%s" % hdd)
+        sys.exit(0)
+
+    if not args.VM:
+        print("ERROR! Must specify VM.\n")
+        parser.print_usage()
+        print("\nVMs:")
+        printVMs(vms)
+        sys.exit(1)
+    """
+    output = runcommand(["VBoxManage", "list", "vms"])
+    vms = []
+    longest_vm_name = -1
+    for line in output.strip().split('\n'):
+        name, uuid = line.rsplit(" ", 1)
+        # get rid of quotes and {}
+        name = name[1:]
+        name = name[:-1]
+        uuid = uuid[1:]
+        uuid = uuid[:-1]
+        vms.append((name, uuid))
+        if len(name) > longest_vm_name:
+            longest_vm_name = len(name)
+
+    vms.sort(key=lambda tup: tup[0])
+    
+    for name, uuid in vms:
+        print_status(name, uuid, longest_vm_name)
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,26 @@
+# bash command-line completion for virtualbox
+# development version, or specially used for my opts
+# Author: Sebastian T. Hafner <sonix@own-hero.net>
+
+have vbox-vm-status &&
+{
+
+_vbox_vm_status()
+{
+    local cur prev
+
+    COMPREPLY=()
+    _get_comp_words_by_ref -n : cur prev
+
+    vms="$(VBoxManage -q list vms | sed -e 's/ {[0123456789abcdef-]\+}//')"
+
+    local IFS=$'\n'
+    COMPREPLY=( $(compgen -W "$vms" -- ${cur}) )
+}
+
+complete -o filenames -F _vbox_vm_status vbox-vm-status
+
+}
+
+
+# vim: set ft=sh tw=80 sw=4 et :
