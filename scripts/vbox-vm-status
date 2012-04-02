@@ -7,6 +7,7 @@ import sys
 import argparse
 
 from subprocess import Popen, PIPE
+from multiprocessing import Process, Queue
 
 ESCAPE="\033"
 
@@ -71,7 +72,7 @@ def checkWarning(stdout):
     assert(len(m.groups()) >= 2)
     return m.group(1) + m.group(2)
 
-def print_status(name, uuid, longest_name_len):
+def print_status(queue, name, uuid, longest_name_len):
     cmd = ["VBoxManage", "showvminfo", uuid]
     output = runcommand(cmd)
 
@@ -97,31 +98,13 @@ def print_status(name, uuid, longest_name_len):
         state = BOLD_BLUE_TEXT + state + "      " + RESET_TEXT
 
     status_string = "%%-%ds  %%s" % longest_name_len
-    print(status_string % (name, state))
+    queue.put([name, status_string % (name, state)])
 
 def main():
     parser = argparse.ArgumentParser(description="List the current state of vbox vms.")
-
     parser.add_argument('VM', type=str, nargs="?", help="VirtualBox VM name")
-    #parser.add_argument('NEW_VM_NAME', type=str, nargs="?", help="VirtualBox VM name")
-
-    #parser.add_argument('--list-vms', action='store_true', help="list available vms")
-    #parser.add_argument('--list-hdds', action='store_true', help="list available vms")
-
     args = parser.parse_args()
-    print("Args: %s" % args)
 
-    """
-    if args.list_vms:
-        printVMs(vms)
-        sys.exit(0)
-
-    if args.list_hdds:
-        for hdd in hddforest.getends():
-            print("%s  (%s)" % (hdd.uuid, hdd.hdvm or ''))
-            #print("%s" % hdd)
-        sys.exit(0)
-    """
     output = runcommand(["VBoxManage", "list", "vms"])
     vms = []
     longest_vm_name = -1
@@ -152,8 +135,32 @@ def main():
         else:
             vms = new_vms
 
-    for name, uuid in vms:
-        print_status(name, uuid, longest_vm_name)
+    queue = Queue()
+    processes = []
+
+    # kick off all processes
+    for i in range(len(vms)):
+        name, uuid = vms[i]
+        p = Process(target=print_status, args=(queue, name, uuid, longest_vm_name))
+        p.start()
+        processes.append(p)
+
+    # join all processes
+    for p in processes:
+        p.join()
+
+    # get all results
+    results = []
+    while not queue.empty():
+        item = queue.get()
+        results.append(item)
+
+    # sort results based on vm name
+    results.sort(key=lambda tup: tup[0])
+
+    # print results
+    for name, print_line in results:
+        print(print_line)
 
 if __name__ == '__main__':
     main()
